@@ -326,6 +326,11 @@ def work_once(project, env, state):
 
         # 10) approve == True AND gate green (this same pass) AND not one-way door → MERGE.
         if lib.gh_pr_merge(repo, pr["number"], method="squash"):
+            # A squash-merge into a NON-default branch (merge_target, e.g. dev) does NOT
+            # auto-close the linked issue, so Kai closes it and clears the review label
+            # itself — otherwise merged cards pile up forever in "review".
+            lib.gh_issue_close(repo, num)
+            lib.gh_issue_edit_labels(repo, num, remove=[labels["review"]])
             notify(env, "merged #%s → %s: %s" % (num, merge_target, title))
             ledger_append({"issue": num, "action": "merge", "result": "merged", "pr": pr.get("url"), "target": merge_target})
             return "merged"

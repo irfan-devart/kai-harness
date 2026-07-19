@@ -226,6 +226,19 @@ def gh_pr_merge(repo, num, method="squash"):
     return rc == 0
 
 
+def gh_issue_close(repo, num):
+    """Close an issue. Returns True on success.
+
+    Called after a successful merge: a squash-merge into a NON-default branch (Kai's
+    merge_target is never the default/prod branch) does not trigger GitHub's automatic
+    ``Closes #n`` behaviour, so Kai must close the card itself or the board never drains.
+    """
+    rc, out, err = run(["gh", "issue", "close", str(num), "--repo", repo])
+    if rc != 0:
+        _log("gh_issue_close failed (%s): %s" % (rc, tail(err, 10)))
+    return rc == 0
+
+
 # --------------------------------------------------------------------------- #
 # Git                                                                          #
 # --------------------------------------------------------------------------- #
