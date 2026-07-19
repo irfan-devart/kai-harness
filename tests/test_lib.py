@@ -141,6 +141,40 @@ class TestExtractLastJson(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# _find_project_item_id (pure — no I/O, no gh, no network)                     #
+# --------------------------------------------------------------------------- #
+
+class TestFindProjectItemId(unittest.TestCase):
+    # Shape mirrors `gh project item-list <n> --owner <o> --format json`.
+    ITEMS = {
+        "items": [
+            {"id": "PVTI_aaa", "content": {"type": "Issue", "number": 11}},
+            {"id": "PVTI_bbb", "content": {"type": "Issue", "number": 12}},
+            {"id": "PVTI_ccc", "content": {"type": "PullRequest", "number": 13}},
+            {"id": "PVTI_ddd"},  # draft item with no linked content
+        ]
+    }
+
+    def test_returns_matching_item_id(self):
+        self.assertEqual(lib._find_project_item_id(self.ITEMS, 12), "PVTI_bbb")
+
+    def test_returns_first_field_only_match(self):
+        self.assertEqual(lib._find_project_item_id(self.ITEMS, 11), "PVTI_aaa")
+
+    def test_absent_issue_returns_none(self):
+        self.assertIsNone(lib._find_project_item_id(self.ITEMS, 99))
+
+    def test_empty_or_malformed_object_returns_none(self):
+        self.assertIsNone(lib._find_project_item_id({}, 12))
+        self.assertIsNone(lib._find_project_item_id({"items": []}, 12))
+        self.assertIsNone(lib._find_project_item_id(None, 12))
+
+    def test_item_without_content_is_skipped(self):
+        # The draft item (no content) must not raise or match.
+        self.assertIsNone(lib._find_project_item_id({"items": [{"id": "PVTI_ddd"}]}, 12))
+
+
+# --------------------------------------------------------------------------- #
 # load_project safety assertion                                                #
 # --------------------------------------------------------------------------- #
 

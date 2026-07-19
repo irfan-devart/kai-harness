@@ -210,6 +210,7 @@ def work_once(project, env, state):
     title = card["title"]
     branch = "%s%s" % (branch_prefix, num)
     move_label(project, num, "ready", "doing")
+    lib.set_project_status(project, num, "in_progress")  # board Status sync (best-effort)
     notify(env, "\n".join([
         "BUILDING — %s #%s" % (proj_name, num),
         title,
@@ -322,6 +323,7 @@ def work_once(project, env, state):
         else:
             # Retry pass: new commits are on the existing PR; ensure it reads as in-review.
             move_label(project, num, "doing", "review")
+        lib.set_project_status(project, num, "in_review")  # board Status sync (best-effort)
 
         # 8) REVIEW with the Tech-Lead (independent, adversarial).
         diff = lib.gh_pr_diff(repo, pr["number"])
@@ -409,6 +411,7 @@ def work_once(project, env, state):
             # itself — otherwise merged cards pile up forever in "review".
             lib.gh_issue_close(repo, num)
             lib.gh_issue_edit_labels(repo, num, remove=[labels["review"]])
+            lib.set_project_status(project, num, "done")  # board Status sync (best-effort)
             notify(env, "\n".join([
                 "MERGED to %s — %s #%s" % (merge_target, proj_name, num),
                 title,

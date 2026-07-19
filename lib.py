@@ -576,3 +576,86 @@ def gh_issue_create(repo, title, body, labels=None):
     m = re.search(r"/issues/(\d+)", url)
     number = int(m.group(1)) if m else None
     return {"url": url, "number": number}
+
+
+# --------------------------------------------------------------------------- #
+# GitHub Project (v2) board Status sync — best-effort, never fatal             #
+# --------------------------------------------------------------------------- #
+
+def _find_project_item_id(items_json_obj, issue_number):
+    """Return the Project item id whose linked issue number matches, else None.
+
+    PURE — takes the already-parsed object from ``gh project item-list ... --format json``
+    (a dict carrying an ``items`` list) plus the target issue number. Each item's linked
+    issue/PR sits under ``content.number``. Kept free of I/O so it can be unit-tested
+    directly without touching gh or the network.
+    """
+    if not isinstance(items_json_obj, dict):
+        return None
+    for item in items_json_obj.get("items", []) or []:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content") or {}
+        if content.get("number") == issue_number:
+            return item.get("id")
+    return None
+
+
+def set_project_status(project, issue_number, status_key):
+    """Sync a GitHub Project (v2) single-select Status field to Kai's label state.
+
+    Opt-in per project: if the descriptor carries no ``project_board`` block this is a
+    no-op. Otherwise it resolves the Project item id for ``issue_number`` via
+    ``gh project item-list`` and sets the Status field to the option id mapped by
+    ``status_key`` (one of ``in_progress`` | ``in_review`` | ``done``) via
+    ``gh project item-edit``.
+
+    BEST-EFFORT AND MUST NEVER RAISE. The board is cosmetic; the build is not. Any failure
+    (missing/incomplete config, gh error, item not found, JSON parse error) is logged and
+    swallowed so a board-sync problem can never interrupt or fail a build, gate, or merge.
+    """
+    try:
+        board = project.get("project_board") or {}
+        if not board:
+            return  # feature is opt-in — nothing configured, so do nothing
+
+        owner = board.get("owner")
+        project_number = board.get("project_number")
+        project_id = board.get("project_id")
+        status_field_id = board.get("status_field_id")
+        option_id = (board.get("status_options") or {}).get(status_key)
+        if not (owner and project_number and project_id and status_field_id and option_id):
+            _log("set_project_status skipped — incomplete project_board config for %r" % status_key)
+            return
+
+        rc, out, err = run([
+            "gh", "project", "item-list", str(project_number),
+            "--owner", owner, "--format", "json",
+        ])
+        if rc != 0:
+            _log("set_project_status: item-list failed (%s): %s" % (rc, tail(err, 6)))
+            return
+        try:
+            items_obj = json.loads(out or "{}")
+        except ValueError as e:
+            _log("set_project_status: item-list JSON parse error: %s" % e)
+            return
+
+        item_id = _find_project_item_id(items_obj, issue_number)
+        if not item_id:
+            _log("set_project_status: no project item for issue #%s" % issue_number)
+            return
+
+        rc, out, err = run([
+            "gh", "project", "item-edit",
+            "--id", item_id,
+            "--project-id", project_id,
+            "--field-id", status_field_id,
+            "--single-select-option-id", option_id,
+        ])
+        if rc != 0:
+            _log("set_project_status: item-edit failed (%s): %s" % (rc, tail(err, 6)))
+            return
+    except Exception as e:  # cosmetic board sync must NEVER interrupt a build/gate/merge
+        _log("set_project_status swallowed error: %s" % e)
+        return
