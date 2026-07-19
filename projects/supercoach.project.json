@@ -37,5 +37,8 @@
   "max_fix_attempts": 1,
   "planner_target_ready": 3,
   "current_milestone": "M2",
-  "planning_sources": ["docs/02-mvp-prd.md"]
+  "planning_sources": [
+    "docs/02-mvp-prd.md",
+    "docs/08-m2-goal-intake-prd.md"
+  ]
 }

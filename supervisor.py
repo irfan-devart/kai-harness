@@ -205,7 +205,7 @@ def work_once(project, env, state):
         return "idle"
 
     # 3) Take the first ready card and move it into "doing".
-    card = ready[0]
+    card = min(ready, key=lambda c: c["number"] or 0)  # oldest first: respect Argo dependency-ordered creation
     num = card["number"]
     title = card["title"]
     branch = "%s%s" % (branch_prefix, num)
