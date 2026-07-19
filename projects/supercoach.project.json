@@ -34,5 +34,8 @@
     "firebase-admin"
   ],
   "agents_dir": "/Users/jarvis/projects/kai-harness/agents",
-  "max_fix_attempts": 1
+  "max_fix_attempts": 1,
+  "planner_target_ready": 3,
+  "current_milestone": "M2",
+  "planning_sources": ["docs/02-mvp-prd.md"]
 }
