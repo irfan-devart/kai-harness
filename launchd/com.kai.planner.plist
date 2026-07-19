@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Kai planner — Argo — LaunchAgent (runs as jarvis, in the login session).
+
+  Install / start:
+    cp launchd/com.kai.planner.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kai.planner.plist
+  Stop / uninstall:
+    launchctl bootout gui/$(id -u)/com.kai.planner
+  Logs (on disk):
+    ~/projects/kai-harness/logs/planner.err.log   (the [kai] log lines + tracebacks)
+    ~/projects/kai-harness/logs/planner.out.log
+
+  Runs the CONTINUOUS Argo planner loop via `zsh -lc` so it inherits the login PATH
+  (claude, node, pnpm, gh, git). KeepAlive restarts it if it dies. Argo only STOCKS the
+  board with kai:ready cards — it never writes code and never merges.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kai.planner</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 planner.py --project projects/supercoach.project.json --poll-interval 300</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jarvis/projects/kai-harness</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jarvis/projects/kai-harness/logs/planner.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jarvis/projects/kai-harness/logs/planner.err.log</string>
+</dict>
+</plist>

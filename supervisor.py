@@ -224,6 +224,9 @@ def work_once(project, env, state):
     base = "origin/%s" % merge_target
     lib.git_fetch(repo_dir)
     if not lib.git_create_branch(repo_dir, branch, base):
+        lib.gh_issue_comment(repo, num, "Kai: could not create the work branch %s off %s. "
+                             "Nothing was built or pushed. Needs a human — the repo may be in a "
+                             "bad state." % (branch, base))
         move_label(project, num, "doing", "blocked")
         notify(env, "\n".join([
             "COULD NOT START — %s #%s" % (proj_name, num),
@@ -293,6 +296,9 @@ def work_once(project, env, state):
 
         # 7) Gate green → push and (on first pass) open the PR into merge_target.
         if not lib.git_push(repo_dir, branch):
+            lib.gh_issue_comment(repo, num, "Kai: gate passed but `git push` of branch %s failed, "
+                                 "so nothing landed on %s. Needs a human to check the repo/remote "
+                                 "state." % (branch, merge_target))
             move_label(project, num, ("review" if pr else "doing"), "blocked")
             notify(env, "\n".join([
                 "BLOCKED (push failed) — %s #%s" % (proj_name, num),
@@ -310,6 +316,9 @@ def work_once(project, env, state):
                 body="Automated by Kai for #%s.\n\n%s\n\nCloses #%s" % (num, card.get("body") or "", num),
             )
             if not pr:
+                lib.gh_issue_comment(repo, num, "Kai: branch %s was pushed but opening a PR into "
+                                     "%s failed. Needs a human to open the PR or check `gh` auth."
+                                     % (branch, merge_target))
                 move_label(project, num, "doing", "blocked")
                 notify(env, "\n".join([
                     "BLOCKED (PR creation failed) — %s #%s" % (proj_name, num),
@@ -357,10 +366,14 @@ def work_once(project, env, state):
         tl_summary = review.get("summary", "")
 
         # 9) Decide. One-way door is checked from BOTH the reviewer and Kai's own analysis.
-        owd_engine = lib.one_way_door(files, diff, project)
-        owd = bool(review.get("one_way_door")) or owd_engine
+        # The engine now returns the SPECIFIC trigger ("glob:.." / "keyword:..") or None.
+        owd_trigger = lib.one_way_door(files, diff, project)
+        reviewer_owd = bool(review.get("one_way_door"))
+        owd = reviewer_owd or bool(owd_trigger)
         if owd:
-            src = "reviewer" if review.get("one_way_door") else "engine (globs/keywords)"
+            # Concrete engine trigger wins for the reason string; else the reviewer flagged it.
+            trigger_reason = owd_trigger or "reviewer flagged one_way_door"
+            src = "reviewer" if reviewer_owd else "engine (globs/keywords)"
             brief = "\n".join([
                 "ESCALATION — one-way door on %s #%s" % (proj_name, num),
                 title,
@@ -368,6 +381,7 @@ def work_once(project, env, state):
                 "This change touches something hard to reverse (auth, secrets, migrations, "
                 "money, or prod config), so I will NOT merge it on my own.",
                 "Detected by: %s" % src,
+                "Trigger: %s" % trigger_reason,
                 "Reviewer verdict: %s" % (tl_summary or "(none)"),
                 ("Blocking: %s" % "; ".join(blocking)) if blocking else "",
                 "",
@@ -377,6 +391,9 @@ def work_once(project, env, state):
                 "Next: your call — review the PR, then merge it into %s yourself if you want it."
                 % merge_target,
             ])
+            lib.gh_issue_comment(repo, num, "Kai: held as a potential one-way-door change (%s). "
+                                 "Not merged; needs a human decision. PR: %s"
+                                 % (trigger_reason, pr.get("url")))
             move_label(project, num, "review", "blocked")
             notify(env, brief)
             ledger_append({"issue": num, "action": "review", "result": "escalated-one-way-door", "pr": pr.get("url")})
@@ -424,6 +441,10 @@ def work_once(project, env, state):
             ledger_append({"issue": num, "action": "merge", "result": "merged", "pr": pr.get("url"), "target": merge_target})
             return "merged"
         # Merge call itself failed (e.g. branch protection / conflict) — do not retry blindly.
+        lib.gh_issue_comment(repo, num, "Kai: approved and gate-green, but the merge call into %s "
+                             "failed (likely branch protection or a conflict). I did not retry. "
+                             "Needs a human to merge or resolve the conflict. PR: %s"
+                             % (merge_target, pr.get("url")))
         move_label(project, num, "review", "blocked")
         notify(env, "\n".join([
             "HELD FOR YOU (merge failed) — %s #%s" % (proj_name, num),

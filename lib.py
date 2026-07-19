@@ -535,12 +535,79 @@ def _glob_match(path, pattern):
     return False
 
 
-def one_way_door(changed_files, diff_text, project):
-    """True if the change touches a one-way door (hard-to-reverse / high-blast-radius).
+def _strip_comments(line):
+    """Strip line/inline comments from a single line of added code, returning the remainder.
 
-    A one-way door is triggered when ANY changed file matches ANY ``one_way_door_globs``
-    entry, OR ANY ``one_way_door_keywords`` term appears in the diff text (case-insensitive).
-    Pure and unit-testable — takes the already-computed files/diff/project as inputs.
+    Handles the comment forms Kai's target repos use: C/JS ``//`` and ``/* ... */`` and
+    shell/Python/jsonc ``#``. CONSERVATIVE by design — it removes only comment spans it is
+    sure about, so anything ambiguous stays IN the returned text. A leftover means a keyword
+    might fire from residual text (a false POSITIVE, which escalates to a human), never a
+    silent miss. The known false positive this guards against is a defensive comment such as
+    ``// no firebase-admin`` tripping the keyword scan.
+    """
+    s = line
+    stripped = s.strip()
+    # Whole-line block comment, or a block-comment continuation line (" * ...").
+    if stripped.startswith("/*"):
+        # If the block closes on this same line, keep any real code after "*/".
+        s = s.split("*/", 1)[1] if "*/" in s else ""
+    elif stripped.startswith("*"):
+        return ""  # JSDoc / block-comment continuation — no code on this line
+    elif "/*" in s:
+        # Inline block comment opened mid-line: drop from "/*" to its close (or to EOL).
+        before, after = s.split("/*", 1)
+        s = before + (after.split("*/", 1)[1] if "*/" in after else "")
+    # Trailing / whole-line "//" comment — but never the "//" inside a URL scheme
+    # (e.g. https://…/payment), so a keyword living in a real URL is not silently dropped.
+    i = s.find("//")
+    while i != -1:
+        if i > 0 and s[i - 1] == ":":
+            i = s.find("//", i + 2)
+            continue
+        s = s[:i]
+        break
+    # Trailing / whole-line "#" comment.
+    h = s.find("#")
+    if h != -1:
+        s = s[:h]
+    return s
+
+
+def _added_code_from_diff(diff_text):
+    """Return only the ADDED code from a unified diff, with comments stripped.
+
+    Keeps lines that begin with a single ``+`` (an added line), excluding the ``+++`` file
+    header. The leading ``+`` is dropped and each line is passed through ``_strip_comments``
+    so the keyword scan runs against real added CODE only — never context lines, removed
+    lines, hunk headers, or comment text. So a keyword that appears solely inside a comment
+    (e.g. ``// no firebase-admin``) does NOT contribute to the haystack.
+    """
+    out = []
+    for raw in (diff_text or "").splitlines():
+        if raw.startswith("+++"):
+            continue
+        if raw.startswith("+"):
+            code = _strip_comments(raw[1:])
+            if code.strip():
+                out.append(code)
+    return "\n".join(out)
+
+
+def one_way_door(changed_files, diff_text, project):
+    """Return the SPECIFIC trigger string if the change touches a one-way door, else None.
+
+    A one-way door is hard-to-reverse / high-blast-radius work (auth, migrations, money,
+    secrets, deletion, prod-deploy config). It fires — and names WHY — when EITHER:
+
+      - ANY changed file matches ANY ``one_way_door_globs`` entry  → returns ``"glob:<pattern>"``
+      - ANY ``one_way_door_keywords`` term appears in the ADDED CODE of the diff
+        (case-insensitive, comments stripped)                      → returns ``"keyword:<kw>"``
+
+    The GLOB scan is unchanged: it runs against ``changed_files`` exactly as before and is
+    content-independent (a matching path fires regardless of diff body). The KEYWORD scan is
+    refined to look only at added, comment-stripped code (see ``_added_code_from_diff``), so a
+    defensive comment like ``// no firebase-admin`` no longer trips it while the same term in
+    real code still does. Returns None when clean. Pure and unit-testable.
     """
     globs = project.get("one_way_door_globs", []) or []
     keywords = project.get("one_way_door_keywords", []) or []
@@ -549,14 +616,14 @@ def one_way_door(changed_files, diff_text, project):
         norm = str(raw_path).replace("\\", "/")
         for pattern in globs:
             if _glob_match(norm, pattern):
-                return True
+                return "glob:%s" % pattern
 
-    haystack = (diff_text or "").lower()
+    haystack = _added_code_from_diff(diff_text).lower()
     for kw in keywords:
         if kw and str(kw).lower() in haystack:
-            return True
+            return "keyword:%s" % kw
 
-    return False
+    return None
 
 
 def gh_issue_create(repo, title, body, labels=None):

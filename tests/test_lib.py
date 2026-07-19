@@ -44,10 +44,11 @@ class TestOneWayDoor(unittest.TestCase):
         self.assertTrue(lib.one_way_door(["db/migrations/0007_add_col.sql"], "", PROJECT))
 
     def test_keyword_match_in_diff(self):
-        # No file globs hit, but the diff text mentions a keyword (case-insensitive).
+        # No file globs hit, but an ADDED non-comment code line mentions a keyword
+        # (case-insensitive). Returns the specific "keyword:<kw>" trigger string.
         files = ["src/checkout/Cart.tsx"]
-        diff = "+ // handle PAYMENT capture flow\n+ const x = 1"
-        self.assertTrue(lib.one_way_door(files, diff, PROJECT))
+        diff = "+ const flow = capturePayment();\n+ const x = 1"
+        self.assertEqual(lib.one_way_door(files, diff, PROJECT), "keyword:payment")
 
     def test_clean_change_is_negative(self):
         files = ["src/components/Button.tsx", "README.md"]
@@ -62,6 +63,84 @@ class TestOneWayDoor(unittest.TestCase):
         # Regression guard: "**/auth/**" must NOT match an unrelated file just because
         # its trailing segment is a bare wildcard.
         self.assertFalse(lib.one_way_door(["src/components/Button.tsx"], "", PROJECT))
+
+
+# --------------------------------------------------------------------------- #
+# one_way_door — comment-aware keyword scan + trigger string (Change 2)        #
+# --------------------------------------------------------------------------- #
+
+OWD_PROJECT = {
+    "one_way_door_globs": ["wrangler.jsonc", "**/auth/**", "**/migrations/**"],
+    "one_way_door_keywords": ["firebase-admin", "payment", "drop table"],
+}
+
+
+class TestOneWayDoorCommentAware(unittest.TestCase):
+    def test_keyword_only_in_line_comment_returns_none(self):
+        # (a) The only "firebase-admin" sits in a // comment — the exact false positive
+        # that wrongly escalated cards #34/#35. It must NOT fire.
+        diff = "\n".join([
+            "diff --git a/src/db.ts b/src/db.ts",
+            "+++ b/src/db.ts",
+            "@@ -1,2 +1,3 @@",
+            "+// no firebase-admin here, we use the client SDK",
+            "+const db = getFirestore();",
+        ])
+        self.assertIsNone(lib.one_way_door(["src/db.ts"], diff, OWD_PROJECT))
+
+    def test_keyword_in_added_code_fires_with_keyword_reason(self):
+        # (b) Same term in a real added code line DOES fire, with a "keyword:" reason.
+        diff = "\n".join([
+            "+++ b/src/server.ts",
+            '+import admin from "firebase-admin";',
+        ])
+        self.assertEqual(
+            lib.one_way_door(["src/server.ts"], diff, OWD_PROJECT),
+            "keyword:firebase-admin",
+        )
+
+    def test_glob_fires_with_glob_reason_regardless_of_content(self):
+        # (c) A changed wrangler.jsonc fires on the glob no matter how clean the body is.
+        self.assertEqual(
+            lib.one_way_door(["wrangler.jsonc"], "+const clean = true;", OWD_PROJECT),
+            "glob:wrangler.jsonc",
+        )
+
+    def test_clean_diff_and_files_returns_none(self):
+        # (d) No glob hit and no keyword in added code → None.
+        diff = "\n".join([
+            "+++ b/src/ui/Button.tsx",
+            "+const label = 'Save';",
+            "-const label = 'OK';",
+        ])
+        self.assertIsNone(lib.one_way_door(["src/ui/Button.tsx"], diff, OWD_PROJECT))
+
+    def test_block_comment_lines_do_not_fire(self):
+        # Whole-line /* */ and " * " continuation comment lines are stripped too.
+        diff = "\n".join([
+            "+++ b/src/x.ts",
+            "+/* firebase-admin is intentionally NOT used here */",
+            "+ * firebase-admin still avoided",
+            "+const ok = 1;",
+        ])
+        self.assertIsNone(lib.one_way_door(["src/x.ts"], diff, OWD_PROJECT))
+
+    def test_keyword_survives_when_code_follows_closed_block_comment(self):
+        # Conservative: real code after a closed /* */ on the same line is still scanned.
+        diff = "+/* set up */ const p = new PaymentClient();"
+        self.assertEqual(
+            lib.one_way_door(["src/pay.ts"], diff, OWD_PROJECT),
+            "keyword:payment",
+        )
+
+    def test_keyword_in_url_is_not_dropped_as_a_comment(self):
+        # Conservative: the "//" in a URL scheme must not be mistaken for a line comment,
+        # so a keyword living in a real URL still fires.
+        diff = '+const u = "https://api.example.com/payment/capture";'
+        self.assertEqual(
+            lib.one_way_door(["src/pay.ts"], diff, OWD_PROJECT),
+            "keyword:payment",
+        )
 
 
 # --------------------------------------------------------------------------- #

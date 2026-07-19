@@ -50,6 +50,30 @@ def ledger_append(record):
         lib._log("planner ledger write failed: %s" % e)
 
 
+def read_closed_titles(repo, limit=100):
+    """Titles of the most recent ``limit`` CLOSED issues — the already-built, do-not-recreate set.
+
+    Once Kai merges a card it CLOSES the linked issue, so a closed title is shipped work. A
+    continuously-running Argo must not re-propose it just because the card has drained off the
+    open board. Uses ``lib.run`` directly (same pattern as ``read_sources``); returns an empty
+    list on any failure — a history read must never kill a planning pass.
+    """
+    rc, out, err = lib.run([
+        "gh", "issue", "list", "--repo", repo,
+        "--state", "closed", "--limit", str(int(limit)),
+        "--json", "number,title",
+    ])
+    if rc != 0:
+        lib._log("planner could not read closed issues: %s" % lib.tail(err, 6))
+        return []
+    try:
+        data = json.loads(out or "[]")
+    except ValueError as e:
+        lib._log("planner closed-issues parse error: %s" % e)
+        return []
+    return [it.get("title", "") for it in data if it.get("title")]
+
+
 def read_sources(repo_dir, sources, ref):
     """Read planning source files from a git ref (e.g. origin/dev), not the working tree.
 
@@ -67,7 +91,8 @@ def read_sources(repo_dir, sources, ref):
     return "\n\n".join(chunks)
 
 
-def build_argo_context(source_text, existing_titles, counts, need, current_milestone, conventions_path):
+def build_argo_context(source_text, existing_titles, closed_titles, counts, need,
+                       current_milestone, conventions_path):
     lines = [
         "PLANNING SOURCE (product PRD / milestones — the source of truth for what to build):",
         source_text or "(no source provided)",
@@ -80,6 +105,11 @@ def build_argo_context(source_text, existing_titles, counts, need, current_miles
         "Open card titles already on the board (do NOT duplicate any of these):",
     ]
     lines += (["- %s" % t for t in existing_titles] or ["(none)"])
+    lines += [
+        "",
+        "ALREADY BUILT AND MERGED (do NOT recreate or re-propose these):",
+    ]
+    lines += (["- %s" % t for t in closed_titles] or ["(none)"])
     lines += [
         "",
         "ADD AT MOST %d card(s), in build order, for the earliest un-carded work in %s."
@@ -111,6 +141,9 @@ def work_once(project, env, dry_run=False):
     review = lib.gh_issue_list(repo, labels["review"])
     counts = {"ready": len(ready), "doing": len(doing), "review": len(review)}
     existing_titles = [c["title"] for c in (ready + doing + review)]
+    # Closed issues = already built and merged (Kai closes each card on merge). Feed their
+    # titles to the planner as a distinct do-NOT-recreate set, bounded to the most recent ~100.
+    closed_titles = read_closed_titles(repo, limit=100)
     need = target_ready - len(ready)
 
     # 2) Need a planning source to plan from.
@@ -125,7 +158,8 @@ def work_once(project, env, dry_run=False):
     # 3) Spawn the Argo planner agent (independent, headless).
     argo = lib.run_claude_agent(
         os.path.join(agents_dir, "argo.md"),
-        build_argo_context(source_text, existing_titles, counts, need, current_milestone, conventions_path),
+        build_argo_context(source_text, existing_titles, closed_titles, counts, need,
+                           current_milestone, conventions_path),
         repo_dir,
         expect_json=True,
     )

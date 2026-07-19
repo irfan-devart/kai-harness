@@ -33,12 +33,25 @@ Status / restart:
 
 Tail live: `tail -f ~/projects/kai-harness/logs/supervisor.err.log`
 
-## Argo planner (the card maker) — NOT a service yet
+## Argo planner (the card maker) — service BUILT, not loaded
 
-Run deliberately when a PRD is ready and we want to review its cards:
+Argo keeps the board stocked with `kai:ready` cards from the PRD/milestones. It never writes
+code and never merges. Continuous loop, polling every 300s; dedups against open cards AND
+already-merged (closed) issues so it won't re-propose shipped work.
+
+The `com.kai.planner.plist` LaunchAgent and its `argoctl` control script exist in the repo but
+are **deliberately NOT loaded** — card creation stays a human decision until we choose to turn
+autonomous planning on. Manage it exactly like `kaictl` manages the supervisor:
+
+    ./argoctl start      # deploy plist + load (starts the continuous planner loop)
+    ./argoctl stop       # unload + remove the installed plist
+    ./argoctl status     # loaded? running? + last log lines
+    ./argoctl logs       # tail -f logs/planner.err.log
+
+Run deliberately (no service) when a PRD is ready and we want to review its cards first:
 
     python3 planner.py --project projects/supercoach.project.json --once --dry-run   # propose, create nothing
     python3 planner.py --project projects/supercoach.project.json --once             # create kai:ready cards
 
-Only add a `com.kai.planner.plist` LaunchAgent once we want autonomous, continuous planning.
-Until then, card creation stays deliberate (write PRD -> run Argo -> review -> Kai builds).
+Logs: `logs/planner.err.log` (the `[kai]` lines + tracebacks) and `logs/planner.out.log`;
+structured planning outcomes in `state/planner-ledger.jsonl`.
