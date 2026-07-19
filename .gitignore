@@ -11,3 +11,6 @@ __pycache__/
 
 # Local overrides (env, project descriptors kept out of the engine repo)
 *.local
+
+# launchd logs (runtime)
+logs/*.log

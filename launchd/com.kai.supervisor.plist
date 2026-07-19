@@ -2,14 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Kai supervisor launchd service template.
+  Kai supervisor — LaunchAgent (runs as jarvis, in the login session).
 
-  A human installs this later:
+  Install / start:
     cp launchd/com.kai.supervisor.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.kai.supervisor.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kai.supervisor.plist
+  Stop / uninstall:
+    launchctl bootout gui/$(id -u)/com.kai.supervisor
+  Logs (on disk):
+    ~/projects/kai-harness/logs/supervisor.err.log   (the [kai] log lines + tracebacks)
+    ~/projects/kai-harness/logs/supervisor.out.log
 
-  It runs the supervisor via `zsh -lc` so the process inherits the LOGIN PATH
-  (claude, node, pnpm, gh, git). Adjust the two absolute paths for the target Mac.
+  Runs the CONTINUOUS supervisor loop via `zsh -lc` so it inherits the login PATH
+  (claude, node, pnpm, gh, git). KeepAlive restarts it if it dies.
 -->
 <plist version="1.0">
 <dict>
@@ -20,8 +25,11 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>python3 /Users/jarvis/projects/kai-harness/supervisor.py --project /Users/jarvis/projects/supercoach/kai.project.json</string>
+        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 supervisor.py --project projects/supercoach.project.json --poll-interval 60</string>
     </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jarvis/projects/kai-harness</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -29,10 +37,13 @@
     <key>KeepAlive</key>
     <true/>
 
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
     <key>StandardOutPath</key>
-    <string>/Users/jarvis/projects/kai-harness/state/supervisor.out</string>
+    <string>/Users/jarvis/projects/kai-harness/logs/supervisor.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/jarvis/projects/kai-harness/state/supervisor.err</string>
+    <string>/Users/jarvis/projects/kai-harness/logs/supervisor.err.log</string>
 </dict>
 </plist>
