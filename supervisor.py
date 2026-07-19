@@ -57,6 +57,16 @@ def notify(env, text):
     return lib.tg_send(env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"), text)
 
 
+def _issue_url(project, num):
+    """Canonical GitHub issue (card) URL.
+
+    A bare https://github.com/... URL is auto-linkified by Telegram and, on iOS with the
+    GitHub app installed, opens the card in the app via universal links (falls back to the
+    browser otherwise). Kept as a plain URL on its own line — no markup to escape.
+    """
+    return "https://github.com/%s/issues/%s" % (project.get("github_repo"), num)
+
+
 def _read_offset():
     try:
         with open(OFFSET_FILE, "r", encoding="utf-8") as f:
@@ -178,6 +188,8 @@ def work_once(project, env, state):
     repo = project["github_repo"]
     repo_dir = project["repo_dir"]
     merge_target = project["merge_target"]
+    prod_branch = project.get("prod_branch")
+    proj_name = project.get("project")
     labels = project["labels"]
     agents_dir = project["agents_dir"]
     gate_cmd = project["gate_cmd"]
@@ -198,14 +210,28 @@ def work_once(project, env, state):
     title = card["title"]
     branch = "%s%s" % (branch_prefix, num)
     move_label(project, num, "ready", "doing")
-    notify(env, "building #%s: %s" % (num, title))
+    notify(env, "\n".join([
+        "BUILDING — %s #%s" % (proj_name, num),
+        title,
+        "",
+        "Dae is writing the change; then I run the quality gate and Tech-Lead review myself.",
+        "Card: %s" % _issue_url(project, num),
+        "Next: I'll message you when it merges to %s, or if it needs you." % merge_target,
+    ]))
 
     # 4) Fresh branch off origin/<merge_target>.
     base = "origin/%s" % merge_target
     lib.git_fetch(repo_dir)
     if not lib.git_create_branch(repo_dir, branch, base):
         move_label(project, num, "doing", "blocked")
-        notify(env, "#%s could not create branch %s off %s" % (num, branch, base))
+        notify(env, "\n".join([
+            "COULD NOT START — %s #%s" % (proj_name, num),
+            title,
+            "",
+            "I couldn't create the work branch %s off %s." % (branch, base),
+            "Card: %s" % _issue_url(project, num),
+            "Next: needs a human — the repo may be in a bad state.",
+        ]))
         ledger_append({"issue": num, "action": "branch", "result": "error"})
         return "error"
 
@@ -229,7 +255,15 @@ def work_once(project, env, state):
             ) or "builder did not report done"
             lib.gh_issue_comment(repo, num, "Kai: builder stopped without a shippable change.\n\n%s" % reason)
             move_label(project, num, "doing", "blocked")
-            notify(env, "#%s builder blocked — %s" % (num, lib.tail(str(reason), 6)))
+            notify(env, "\n".join([
+                "BLOCKED (builder stopped) — %s #%s" % (proj_name, num),
+                title,
+                "",
+                "Dae couldn't produce a shippable change and stopped. Nothing was pushed.",
+                "Why: %s" % lib.tail(str(reason), 6),
+                "Card: %s" % _issue_url(project, num),
+                "Next: needs you — the card may be unclear or too big.",
+            ]))
             lib.git_reset_hard(repo_dir)  # abandon partial work cleanly
             ledger_append({"issue": num, "action": "build", "result": "dae-blocked", "notes": reason})
             return "dae-blocked"
@@ -239,7 +273,19 @@ def work_once(project, env, state):
         if not green:
             lib.gh_issue_comment(repo, num, "Kai: independent gate is RED — not pushing.\n\n```\n%s\n```" % gate_tail)
             move_label(project, num, ("review" if pr else "doing"), "blocked")
-            notify(env, "#%s gate red — %s" % (num, lib.tail(gate_tail, 6)))
+            msg = [
+                "BLOCKED (quality gate red) — %s #%s" % (proj_name, num),
+                title,
+                "",
+                "My own `%s` failed, so I did NOT push or merge. Nothing landed on %s." % (gate_cmd, merge_target),
+                "Gate tail:",
+                lib.tail(gate_tail, 8),
+                "Card: %s" % _issue_url(project, num),
+            ]
+            if pr:
+                msg.append("PR: %s" % pr.get("url"))
+            msg.append("Next: needs a fix — I never merge a red build.")
+            notify(env, "\n".join(msg))
             lib.git_reset_hard(repo_dir)
             ledger_append({"issue": num, "action": "gate", "result": "gate-red"})
             return "gate-red"
@@ -247,7 +293,12 @@ def work_once(project, env, state):
         # 7) Gate green → push and (on first pass) open the PR into merge_target.
         if not lib.git_push(repo_dir, branch):
             move_label(project, num, ("review" if pr else "doing"), "blocked")
-            notify(env, "#%s push failed" % num)
+            notify(env, "\n".join([
+                "BLOCKED (push failed) — %s #%s" % (proj_name, num),
+                title,
+                "Card: %s" % _issue_url(project, num),
+                "Next: needs a human.",
+            ]))
             ledger_append({"issue": num, "action": "push", "result": "error"})
             return "error"
 
@@ -259,7 +310,12 @@ def work_once(project, env, state):
             )
             if not pr:
                 move_label(project, num, "doing", "blocked")
-                notify(env, "#%s PR creation failed" % num)
+                notify(env, "\n".join([
+                    "BLOCKED (PR creation failed) — %s #%s" % (proj_name, num),
+                    title,
+                    "Card: %s" % _issue_url(project, num),
+                    "Next: needs a human.",
+                ]))
                 ledger_append({"issue": num, "action": "pr", "result": "error"})
                 return "error"
             move_label(project, num, "doing", "review")
@@ -281,7 +337,16 @@ def work_once(project, env, state):
             reason = review.get("_parse_error") if isinstance(review, dict) else str(review)
             lib.gh_issue_comment(repo, num, "Kai: reviewer output was unparseable — holding for human.\n\n%s" % lib.tail(str(reason), 20))
             move_label(project, num, "review", "blocked")
-            notify(env, "#%s reviewer unreadable — held for human. PR: %s" % (num, pr.get("url")))
+            notify(env, "\n".join([
+                "HELD FOR YOU (review unreadable) — %s #%s" % (proj_name, num),
+                title,
+                "",
+                "The Tech-Lead's output couldn't be parsed. An unreadable review is never an "
+                "approval, so I held it — nothing was merged.",
+                "PR: %s" % pr.get("url"),
+                "Card: %s" % _issue_url(project, num),
+                "Next: needs you to eyeball the PR.",
+            ]))
             ledger_append({"issue": num, "action": "review", "result": "unparseable"})
             return "blocked"
 
@@ -293,16 +358,22 @@ def work_once(project, env, state):
         owd_engine = lib.one_way_door(files, diff, project)
         owd = bool(review.get("one_way_door")) or owd_engine
         if owd:
-            src = "reviewer" if review.get("one_way_door") else "engine-globs/keywords"
+            src = "reviewer" if review.get("one_way_door") else "engine (globs/keywords)"
             brief = "\n".join([
-                "ESCALATION — one-way door on #%s: %s" % (num, title),
-                "Detected by: %s" % src,
+                "ESCALATION — one-way door on %s #%s" % (proj_name, num),
+                title,
                 "",
+                "This change touches something hard to reverse (auth, secrets, migrations, "
+                "money, or prod config), so I will NOT merge it on my own.",
+                "Detected by: %s" % src,
                 "Reviewer verdict: %s" % (tl_summary or "(none)"),
                 ("Blocking: %s" % "; ".join(blocking)) if blocking else "",
                 "",
-                "PR left OPEN (not merged): %s" % pr.get("url"),
-                "This needs a human decision — Kai will not merge a one-way door.",
+                "The PR is OPEN and waiting for your decision — nothing was merged.",
+                "PR: %s" % pr.get("url"),
+                "Card: %s" % _issue_url(project, num),
+                "Next: your call — review the PR, then merge it into %s yourself if you want it."
+                % merge_target,
             ])
             move_label(project, num, "review", "blocked")
             notify(env, brief)
@@ -319,8 +390,15 @@ def work_once(project, env, state):
                 move_label(project, num, "review", "doing")
                 continue  # loop Dae once more with the reviewer's feedback
             move_label(project, num, "review", "blocked")
-            notify(env, "#%s not approved after %s fix attempt(s) — held for human. PR: %s"
-                   % (num, attempt, pr.get("url")))
+            notify(env, "\n".join([
+                "HELD FOR YOU (not approved) — %s #%s" % (proj_name, num),
+                title,
+                "",
+                "Tech-Lead didn't approve after %s fix attempt(s). Nothing was merged." % attempt,
+                "PR: %s" % pr.get("url"),
+                "Card: %s" % _issue_url(project, num),
+                "Next: your call — review the blocking notes on the PR.",
+            ]))
             ledger_append({"issue": num, "action": "review", "result": "blocked-not-approved", "pr": pr.get("url")})
             return "blocked"
 
@@ -331,12 +409,29 @@ def work_once(project, env, state):
             # itself — otherwise merged cards pile up forever in "review".
             lib.gh_issue_close(repo, num)
             lib.gh_issue_edit_labels(repo, num, remove=[labels["review"]])
-            notify(env, "merged #%s → %s: %s" % (num, merge_target, title))
+            notify(env, "\n".join([
+                "MERGED to %s — %s #%s" % (merge_target, proj_name, num),
+                title,
+                "",
+                "Passed my gate + Tech-Lead review. Card closed.",
+                "PR: %s" % pr.get("url"),
+                "Next: nothing needed. Promoting %s → prod (%s) stays your manual gate."
+                % (merge_target, prod_branch),
+            ]))
             ledger_append({"issue": num, "action": "merge", "result": "merged", "pr": pr.get("url"), "target": merge_target})
             return "merged"
         # Merge call itself failed (e.g. branch protection / conflict) — do not retry blindly.
         move_label(project, num, "review", "blocked")
-        notify(env, "#%s approved but merge failed — held for human. PR: %s" % (num, pr.get("url")))
+        notify(env, "\n".join([
+            "HELD FOR YOU (merge failed) — %s #%s" % (proj_name, num),
+            title,
+            "",
+            "Approved and green, but the merge call itself failed (conflict or branch "
+            "protection). I did not retry.",
+            "PR: %s" % pr.get("url"),
+            "Card: %s" % _issue_url(project, num),
+            "Next: needs a human.",
+        ]))
         ledger_append({"issue": num, "action": "merge", "result": "merge-failed", "pr": pr.get("url")})
         return "blocked"
 
@@ -360,9 +455,15 @@ def main(argv=None):
     env = lib.load_env()
     state = {}
 
-    online = "Kai online for %s (target %s, prod %s is protected)" % (
-        project.get("project"), project.get("merge_target"), project.get("prod_branch"))
-    lib._log(online)
+    online = "\n".join([
+        "Kai is online for %s." % project.get("project"),
+        "Autonomous merges land on `%s`; prod (`%s`) stays your manual gate." % (
+            project.get("merge_target"), project.get("prod_branch")),
+        "Watching the board — I'll message you on each build, merge, or anything that needs you.",
+        "Board: https://github.com/%s/issues" % project.get("github_repo"),
+    ])
+    lib._log("Kai online for %s (target %s, prod %s protected)" % (
+        project.get("project"), project.get("merge_target"), project.get("prod_branch")))
     notify(env, online)
 
     if args.once:
@@ -378,12 +479,13 @@ def main(argv=None):
             if status == "idle":
                 now = time.time()
                 if now - last_heartbeat >= HEARTBEAT_INTERVAL:
-                    notify(env, "Kai heartbeat — idle, board clear for %s" % project.get("project"))
+                    notify(env, "Kai heartbeat — idle. Board is clear for %s; prod (%s) protected. Nothing needs you." % (
+                        project.get("project"), project.get("prod_branch")))
                     last_heartbeat = now
         except Exception as e:  # one bad card must never kill the loop
             tb = traceback.format_exc()
             lib._log("unhandled error in pass: %s\n%s" % (e, tb))
-            notify(env, "Kai error (loop continues): %s" % lib.tail(str(e), 4))
+            notify(env, "Kai hit an error (the loop keeps running): %s" % lib.tail(str(e), 4))
         time.sleep(max(1, args.poll_interval))
 
 
