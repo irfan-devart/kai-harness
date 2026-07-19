@@ -1,0 +1,14 @@
+{
+  "project": "supercoach",
+  "repo_dir": "/Users/jarvis/projects/supercoach",
+  "github_repo": "irfan-devart/supercoach",
+  "prod_branch": "main",
+  "merge_target": "dev",
+  "gate_cmd": "pnpm check",
+  "branch_prefix": "kai/",
+  "conventions_path": "CONVENTIONS.md",
+  "one_way_door_globs": ["firestore.rules", "**/auth/**", "**/migrations/**", "wrangler.jsonc", "**/*.secret*"],
+  "one_way_door_keywords": ["secret", "migration", "payment", "delete user", "drop table", "deploy prod"],
+  "agents_dir": "/Users/jarvis/projects/kai-harness/agents",
+  "max_fix_attempts": 1
+}

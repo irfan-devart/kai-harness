@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Kai supervisor launchd service template.
+
+  A human installs this later:
+    cp launchd/com.kai.supervisor.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.kai.supervisor.plist
+
+  It runs the supervisor via `zsh -lc` so the process inherits the LOGIN PATH
+  (claude, node, pnpm, gh, git). Adjust the two absolute paths for the target Mac.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kai.supervisor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>python3 /Users/jarvis/projects/kai-harness/supervisor.py --project /Users/jarvis/projects/supercoach/kai.project.json</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jarvis/projects/kai-harness/state/supervisor.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jarvis/projects/kai-harness/state/supervisor.err</string>
+</dict>
+</plist>

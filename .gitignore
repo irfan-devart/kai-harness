@@ -1,0 +1,13 @@
+# Kai harness — runtime state is machine-local, never committed.
+state/*
+!state/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Local overrides (env, project descriptors kept out of the engine repo)
+*.local
