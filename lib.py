@@ -557,3 +557,22 @@ def one_way_door(changed_files, diff_text, project):
             return True
 
     return False
+
+
+def gh_issue_create(repo, title, body, labels=None):
+    """Create an issue and return ``{url, number}`` or None on failure.
+
+    Used by the Argo planner (planner.py) to stock the board. The build supervisor never creates
+    issues — it only reads, labels, comments, closes, and merges. Kept alongside the other gh_ wrappers.
+    """
+    args = ["gh", "issue", "create", "--repo", repo, "--title", title, "--body", body]
+    for lbl in (labels or []):
+        args += ["--label", lbl]
+    rc, out, err = run(args)
+    if rc != 0:
+        _log("gh_issue_create failed (%s): %s" % (rc, tail(err, 10)))
+        return None
+    url = (out or "").strip().splitlines()[-1].strip() if out.strip() else ""
+    m = re.search(r"/issues/(\d+)", url)
+    number = int(m.group(1)) if m else None
+    return {"url": url, "number": number}
