@@ -1,0 +1,54 @@
+#!/bin/zsh
+# kaictl — control the Kai supervisor (launchd LaunchAgent).
+#
+#   kaictl start      install the plist + load it (starts the continuous loop)
+#   kaictl stop       unload it + remove the installed plist (no auto-restart on login)
+#   kaictl restart    stop then start (picks up the latest plist from the repo)
+#   kaictl status     loaded? running? + last log lines
+#   kaictl logs       tail -f the live debug log
+#
+# The engine builds any kai:ready card -> gate -> Tech-Lead review -> merge to dev
+# (never main). Runs as the current user so it inherits the login PATH/auth.
+set -euo pipefail
+
+HARNESS_DIR="${KAI_HARNESS_DIR:-$HOME/projects/kai-harness}"
+LABEL="com.kai.supervisor"
+PLIST_SRC="$HARNESS_DIR/launchd/$LABEL.plist"
+PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG_ERR="$HARNESS_DIR/logs/supervisor.err.log"
+DOMAIN="gui/$(id -u)"
+
+status() {
+  echo "== launchctl (PID / last-exit / label) =="
+  launchctl list | grep -i kai || echo "  not loaded"
+  echo "== process =="
+  pgrep -fl supervisor.py || echo "  no process"
+  echo "== last log lines ($LOG_ERR) =="
+  tail -n 6 "$LOG_ERR" 2>/dev/null || echo "  (no log yet)"
+}
+
+start() {
+  [ -f "$PLIST_SRC" ] || { echo "missing $PLIST_SRC — is the repo cloned?"; exit 1; }
+  mkdir -p "$HARNESS_DIR/logs"
+  cp "$PLIST_SRC" "$PLIST_DST"                       # always deploy the latest repo template
+  launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true   # clear any stale load
+  launchctl bootstrap "$DOMAIN" "$PLIST_DST"
+  echo "started $LABEL"
+  status
+}
+
+stop() {
+  launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null && echo "stopped $LABEL" || echo "$LABEL was not loaded"
+  rm -f "$PLIST_DST" && echo "removed $PLIST_DST (no auto-restart on login)"
+}
+
+restart() { stop || true; start; }
+
+case "${1:-status}" in
+  start)   start ;;
+  stop)    stop ;;
+  restart) restart ;;
+  status)  status ;;
+  logs)    exec tail -f "$LOG_ERR" ;;
+  *)       echo "usage: kaictl {start|stop|restart|status|logs}"; exit 2 ;;
+esac
