@@ -25,7 +25,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 supervisor.py --project projects/supercoach.project.json --poll-interval 60</string>
+        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 supervisor.py --project projects/supercoach.project.json --poll-interval 300</string>
     </array>
 
     <key>WorkingDirectory</key>
