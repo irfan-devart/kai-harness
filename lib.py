@@ -444,7 +444,7 @@ def run_claude_agent(agent_md_path, task_context, repo_dir, expect_json=False, t
     """Spawn a headless Claude Code process and return its result.
 
     The prompt is ``<agent_md>\\n\\n---\\nTASK CONTEXT:\\n<task_context>``. Claude is
-    invoked as ``claude -p <prompt> --permission-mode acceptEdits --add-dir <repo_dir>``
+    invoked as ``claude -p <prompt> --permission-mode bypassPermissions --add-dir <repo_dir>``
     through ``zsh -lc`` (so ``claude`` is on the login PATH), with cwd set to the repo.
 
     The prompt is passed as a positional shell argument (``$1``) rather than interpolated
@@ -470,7 +470,7 @@ def run_claude_agent(agent_md_path, task_context, repo_dir, expect_json=False, t
     # keeping arbitrary prompt content out of the parsed command line entirely.
     cmd = [
         "zsh", "-lc",
-        'claude -p "$1" --permission-mode acceptEdits --add-dir "$2"',
+        'claude -p "$1" --permission-mode bypassPermissions --add-dir "$2"',
         "kai-agent",  # $0
         prompt,       # $1
         repo_dir,     # $2
