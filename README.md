@@ -1,18 +1,25 @@
-# Kai: AI agents that close tickets, with guardrails
+# Kai: the merge gate for AI coding agents
 
-Kai turns a GitHub board into a queue that AI agents work through on their own. One agent builds each ticket, a second agent reviews it adversarially, Kai runs your quality gate itself, and only then does anything merge. Anything risky goes to a human instead.
+Coding agents can write the code. The hard part is trusting what they ship.
 
-## Why this exists
+Teams that adopt Claude Code, Codex or Copilot agents hit the same wall within weeks: agents open pull requests faster than people can review them, nobody is comfortable letting an agent merge, and the "10x" turns into a review queue. So the agents end up as fancy autocomplete.
 
-Coding agents are good at writing code. They are bad at knowing when to stop, and nobody should let one merge its own work. Most "autonomous dev" setups skip that problem. Kai is built around it:
+Kai is the missing layer between "the agent wrote it" and "it's merged". It works your GitHub board ticket by ticket, and nothing merges unless it passes checks the agent cannot game.
+
+## What you get
+
+- **Tickets closed without a human in the loop for the routine work.** Label an issue `kai:ready`; it comes back as a reviewed, tested, merged change on your staging branch.
+- **Humans only see what needs a human.** Auth, migrations, payments, secrets, deletions and deploy config are escalated with the PR left open and the reason stated.
+- **An audit trail.** Every card ends with a comment explaining what happened, and every outcome is logged.
+- **No new platform.** It runs on your repo, your GitHub, your CI command and your machine. The agent prompts are plain Markdown you can read and change.
+
+## The guardrails
 
 - **The builder never merges.** It commits on a branch and stops.
 - **The reviewer did not write the code.** It is a separate agent with a separate prompt, told to find the reason not to ship.
-- **The gate is run independently.** Kai runs your test/lint command itself and ignores what the builder claims.
-- **Hard-to-reverse changes never merge on their own.** Auth, migrations, payments, secrets, deletions and deploy config are escalated to a human with the PR left open.
+- **The gate is run independently.** Kai runs your test and lint command itself and ignores what the builder claims.
+- **Hard-to-reverse changes never merge on their own.** They go to a human.
 - **Prod is never a merge target.** Kai merges into a staging branch like `dev`. Promotion to prod stays a human decision, and Kai refuses to start if the two branches are the same.
-
-The goal is a team that ships more without lowering the bar: agents do the ticket work, humans keep the decisions that matter.
 
 ## How it works
 
@@ -87,6 +94,10 @@ Run the tests with `python3 -m unittest discover -s tests`.
 ## Status
 
 Built and run against a real Next.js product repo. It is a working harness, not a packaged product: expect to read the code and adapt the prompts and config to your repo.
+
+## Adopting this on your team
+
+The code is the easy part. What makes it work is small, well-specified tickets, a gate you trust, and one-way-door rules that match your system. If you want help setting that up on your repo, get in touch via [irfan.build](https://irfan.build).
 
 ## License
 
