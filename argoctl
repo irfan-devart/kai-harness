@@ -13,7 +13,7 @@
 # PATH/auth. Same mechanism as kaictl, pointed at the com.kai.planner label + logs.
 set -euo pipefail
 
-HARNESS_DIR="${KAI_HARNESS_DIR:-$HOME/projects/kai-harness}"
+HARNESS_DIR="${KAI_HARNESS_DIR:-$HOME/kai-harness}"
 LABEL="com.kai.planner"
 PLIST_SRC="$HARNESS_DIR/launchd/$LABEL.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"

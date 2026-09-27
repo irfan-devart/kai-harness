@@ -1,14 +1,44 @@
 {
-  "project": "supercoach",
-  "repo_dir": "/Users/jarvis/projects/supercoach",
-  "github_repo": "irfan-devart/supercoach",
+  "project": "my-app",
+  "repo_dir": "/Users/YOU/code/my-app",
+  "github_repo": "your-org/my-app",
   "prod_branch": "main",
   "merge_target": "dev",
   "gate_cmd": "pnpm check",
   "branch_prefix": "kai/",
   "conventions_path": "CONVENTIONS.md",
-  "one_way_door_globs": ["firestore.rules", "**/auth/**", "**/migrations/**", "wrangler.jsonc", "**/*.secret*"],
-  "one_way_door_keywords": ["secret", "migration", "payment", "delete user", "drop table", "deploy prod"],
-  "agents_dir": "/Users/jarvis/projects/kai-harness/agents",
-  "max_fix_attempts": 1
+  "labels": {
+    "ready": "kai:ready",
+    "doing": "kai:doing",
+    "review": "kai:review",
+    "blocked": "kai:blocked"
+  },
+  "one_way_door_globs": [
+    "**/auth/**",
+    "**/migrations/**",
+    ".github/workflows/**",
+    "**/*.secret*"
+  ],
+  "one_way_door_keywords": [
+    "secret",
+    "migration",
+    "payment",
+    "delete user",
+    "drop table",
+    "deploy prod"
+  ],
+  "agents_dir": "/Users/YOU/kai-harness/agents",
+  "max_fix_attempts": 1,
+
+  "planner_target_ready": 3,
+  "current_milestone": "M1",
+  "planning_sources": ["docs/prd.md"],
+
+  "project_board": {
+    "owner": "your-org",
+    "project_number": 1,
+    "project_id": "PVT_...",
+    "status_field_id": "PVTSSF_...",
+    "status_options": { "in_progress": "...", "in_review": "...", "done": "..." }
+  }
 }

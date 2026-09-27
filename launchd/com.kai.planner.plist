@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Kai planner — Argo — LaunchAgent (runs as jarvis, in the login session).
+  Kai planner — Argo — LaunchAgent (runs as your user, in the login session).
 
   Install / start:
     cp launchd/com.kai.planner.plist ~/Library/LaunchAgents/
@@ -26,11 +26,11 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 planner.py --project projects/supercoach.project.json --poll-interval 300</string>
+        <string>cd /Users/YOU/kai-harness &amp;&amp; exec python3 planner.py --project projects/my-app.project.json --poll-interval 300</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/jarvis/projects/kai-harness</string>
+    <string>/Users/YOU/kai-harness</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -42,9 +42,9 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/jarvis/projects/kai-harness/logs/planner.out.log</string>
+    <string>/Users/YOU/kai-harness/logs/planner.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/jarvis/projects/kai-harness/logs/planner.err.log</string>
+    <string>/Users/YOU/kai-harness/logs/planner.err.log</string>
 </dict>
 </plist>

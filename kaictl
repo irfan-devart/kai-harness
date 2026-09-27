@@ -11,7 +11,7 @@
 # (never main). Runs as the current user so it inherits the login PATH/auth.
 set -euo pipefail
 
-HARNESS_DIR="${KAI_HARNESS_DIR:-$HOME/projects/kai-harness}"
+HARNESS_DIR="${KAI_HARNESS_DIR:-$HOME/kai-harness}"
 LABEL="com.kai.supervisor"
 PLIST_SRC="$HARNESS_DIR/launchd/$LABEL.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"

@@ -1,15 +1,15 @@
 # Kai harness — launchd services
 
-Kai runs as a **LaunchAgent** (as `jarvis`, in the login session) so it inherits the login PATH
-(claude / node / pnpm / gh / git) and the user's auth. The Mac never sleeps, so it stays up. This is
+Kai runs as a **LaunchAgent** (as your user, in the login session) so it inherits the login PATH
+(claude / node / pnpm / gh / git) and the user's auth. This is
 why launchd, not cron: cron would fire discrete `--once` passes with no crash-restart; a persistent
 agent wants a managed service.
 
-## Kai supervisor (the builder loop) — RUNNING
+## Kai supervisor (the builder loop) 
 
-Builds any `kai:ready` card: Dae builds -> Kai's own `pnpm check` gate -> Tech-Lead review -> merge
-into `dev` -> close card -> Telegram. Continuous loop, polling the board every 60s. `KeepAlive`
-restarts it if it dies. Never touches `main` (prod stays Irfan's manual gate).
+Builds any `kai:ready` card: Dae builds -> Kai's own gate command -> Tech-Lead review -> merge
+into `dev` -> close card -> Telegram. Continuous loop, polling the board every 300s. `KeepAlive`
+restarts it if it dies. Never touches the prod branch (promotion stays a human gate).
 
 Install / start:
 
@@ -31,7 +31,7 @@ Status / restart:
 - `logs/supervisor.out.log` — stdout
 - `state/ledger.jsonl` — structured per-card outcomes (merged / gate-red / escalated / ...)
 
-Tail live: `tail -f ~/projects/kai-harness/logs/supervisor.err.log`
+Tail live: `tail -f $KAI_HARNESS_DIR/logs/supervisor.err.log`
 
 ## Argo planner (the card maker) — service BUILT, not loaded
 
@@ -50,8 +50,8 @@ autonomous planning on. Manage it exactly like `kaictl` manages the supervisor:
 
 Run deliberately (no service) when a PRD is ready and we want to review its cards first:
 
-    python3 planner.py --project projects/supercoach.project.json --once --dry-run   # propose, create nothing
-    python3 planner.py --project projects/supercoach.project.json --once             # create kai:ready cards
+    python3 planner.py --project projects/my-app.project.json --once --dry-run   # propose, create nothing
+    python3 planner.py --project projects/my-app.project.json --once             # create kai:ready cards
 
 Logs: `logs/planner.err.log` (the `[kai]` lines + tracebacks) and `logs/planner.out.log`;
 structured planning outcomes in `state/planner-ledger.jsonl`.

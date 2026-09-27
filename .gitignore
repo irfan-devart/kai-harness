@@ -14,3 +14,6 @@ __pycache__/
 
 # launchd logs (runtime)
 logs/*.log
+
+# Project descriptors are per-machine; only the example is committed
+projects/*.json

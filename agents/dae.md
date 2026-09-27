@@ -15,7 +15,7 @@ on a fresh branch that was created for you — the branch name is in the task co
   self-verify it is green **before** you finish. Fix what you broke.
 - Commit your work in scoped commits with clear messages.
 
-## Hard rules (from the dae-loop standing rules)
+## Hard rules
 
 - **Scope = this repo only.** Never touch anything outside the repo you are running in.
 - **Do NOT push. Do NOT open a PR. Do NOT merge.** The supervisor handles push, PR, and

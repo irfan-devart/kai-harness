@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Kai supervisor — LaunchAgent (runs as jarvis, in the login session).
+  Kai supervisor — LaunchAgent (runs as your user, in the login session).
 
   Install / start:
     cp launchd/com.kai.supervisor.plist ~/Library/LaunchAgents/
@@ -25,11 +25,11 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd /Users/jarvis/projects/kai-harness &amp;&amp; exec python3 supervisor.py --project projects/supercoach.project.json --poll-interval 300</string>
+        <string>cd /Users/YOU/kai-harness &amp;&amp; exec python3 supervisor.py --project projects/my-app.project.json --poll-interval 300</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/jarvis/projects/kai-harness</string>
+    <string>/Users/YOU/kai-harness</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -41,9 +41,9 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/jarvis/projects/kai-harness/logs/supervisor.out.log</string>
+    <string>/Users/YOU/kai-harness/logs/supervisor.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/jarvis/projects/kai-harness/logs/supervisor.err.log</string>
+    <string>/Users/YOU/kai-harness/logs/supervisor.err.log</string>
 </dict>
 </plist>

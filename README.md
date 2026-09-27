@@ -1,77 +1,93 @@
-# Kai — autonomous dev-harness engine
+# Kai: AI agents that close tickets, with guardrails
 
-Kai is a supervisor loop that runs continuously on a Mac under launchd. It reads a
-GitHub board (issues + labels), and for each ready card: spawns a headless Claude Code
-process ("Dae") to build the change on a branch, independently runs the project's
-quality gate, spawns another headless Claude Code process ("Tech-Lead") to review the
-diff, and **merges the PR itself only if the reviewer approves AND the gate is green AND
-it is not a one-way-door change**. It notifies a human over Telegram and escalates
-one-way doors instead of merging.
+Kai turns a GitHub board into a queue that AI agents work through on their own. One agent builds each ticket, a second agent reviews it adversarially, Kai runs your quality gate itself, and only then does anything merge. Anything risky goes to a human instead.
 
-The builder (Dae) **never merges its own work** — only the supervisor merges.
+## Why this exists
 
-## The 3-repo model
+Coding agents are good at writing code. They are bad at knowing when to stop, and nobody should let one merge its own work. Most "autonomous dev" setups skip that problem. Kai is built around it:
 
-Kai is deliberately split across three homes so the engine, the work, and the human
-narrative never bleed into each other:
+- **The builder never merges.** It commits on a branch and stops.
+- **The reviewer did not write the code.** It is a separate agent with a separate prompt, told to find the reason not to ship.
+- **The gate is run independently.** Kai runs your test/lint command itself and ignores what the builder claims.
+- **Hard-to-reverse changes never merge on their own.** Auth, migrations, payments, secrets, deletions and deploy config are escalated to a human with the PR left open.
+- **Prod is never a merge target.** Kai merges into a staging branch like `dev`. Promotion to prod stays a human decision, and Kai refuses to start if the two branches are the same.
 
-1. **kai-harness** (this repo) — the *engine*. The supervisor loop, the toolbox
-   (`lib.py`), and the agent prompts (`agents/`). Project-agnostic; carries no
-   project-specific configuration.
-2. **each project repo** — carries a `kai.project.json` descriptor at its root that
-   tells Kai how to build and gate *that* project (repo dir, GitHub repo, branches,
-   gate command, one-way-door rules, labels). See `kai.project.example.json`.
-3. **the digital brain** — the human narrative: what got built, why, and the decisions
-   around it. Kai writes machine outcomes to `state/ledger.jsonl`; the human story
-   lives in the brain, not here.
+The goal is a team that ships more without lowering the bar: agents do the ticket work, humans keep the decisions that matter.
 
-## How to run
-
-```zsh
-# single pass, then exit — the normal way to test a change end to end
-zsh -lc 'python3 supervisor.py --project /path/to/kai.project.json --once'
-
-# continuous supervisor loop (default 60s poll interval)
-zsh -lc 'python3 supervisor.py --project /path/to/kai.project.json'
-
-# custom poll interval
-zsh -lc 'python3 supervisor.py --project /path/to/kai.project.json --poll-interval 120'
-```
-
-It runs under launchd via `zsh -lc` so it inherits the **login PATH** — that is how the
-subprocesses find `claude`, `node`, `pnpm`, `gh`, and `git`. See
-`launchd/com.kai.supervisor.plist` for the service template.
-
-Environment (Telegram credentials) is read from `~/.config/kai-harness/env`:
+## How it works
 
 ```
-TELEGRAM_BOT_TOKEN=123456:abcdef
-TELEGRAM_CHAT_ID=987654321
+ GitHub issue          Dae             Kai              Tech-Lead          Kai
+ labelled      ->   builds on   ->   runs the    ->   reviews the   ->   merges to dev
+ kai:ready          a branch         gate itself      diff              (or escalates)
 ```
 
-## Safety rules (the non-negotiables)
+1. **Argo (optional planner)** reads your PRD and current milestone and creates small, dependency-ordered cards with acceptance criteria. It never writes code.
+2. **Kai (the supervisor)** picks the oldest `kai:ready` card, creates a branch and hands it to Dae.
+3. **Dae (the builder)** implements the simplest change that meets the acceptance criteria, runs the gate, and commits. It stops and says so if the card is too big or unclear.
+4. Kai pushes, opens the PR and runs the gate independently.
+5. **Tech-Lead (the reviewer)** reviews the diff against the acceptance criteria and flags one-way doors.
+6. Kai merges only if **review approves AND gate is green AND no one-way door is touched**. Otherwise the card is blocked or escalated, with the reason posted as a comment.
+7. You get a Telegram message with links to the card and PR. Outcomes are written to `state/ledger.jsonl`.
 
-- **The writer never merges.** Dae builds and commits on a branch; it does not push,
-  open PRs, or merge. Only the supervisor merges.
-- **The supervisor merges only on approve + green + not-one-way-door.** All three must
-  hold: the Tech-Lead review approves, Kai's own independent gate run is green, and the
-  change touches no one-way door.
-- **The prod branch is never a merge target.** Kai merges into `merge_target` (e.g.
-  `dev`), never into `prod_branch`. The supervisor asserts `merge_target != prod_branch`
-  at startup and refuses to run otherwise — promotion to prod stays a human gate.
-- **One-way doors escalate, they do not merge.** Auth, data migrations, money/payments,
-  secrets, deletion, and production deploy config are escalated to a human over Telegram
-  with the PR left open.
+The agents are headless [Claude Code](https://claude.com/claude-code) processes. Their prompts are plain Markdown in `agents/`, so you can read and change exactly what each one is told.
+
+## Requirements
+
+- macOS (the service templates use launchd; the Python itself is portable)
+- Python 3, standard library only
+- `git`, the GitHub CLI `gh` (authenticated), and the `claude` CLI on your login PATH
+- A repo with a gate command (for example `pnpm check` or `make test`) and a staging branch
+- Optional: a Telegram bot for notifications
+
+## Setup
+
+1. Clone this repo, for example to `~/kai-harness`.
+2. Copy `kai.project.example.json` to `projects/my-app.project.json` and fill it in: repo path, GitHub repo, branches, gate command, one-way-door rules. Files in `projects/` are git-ignored.
+3. Create the labels `kai:ready`, `kai:doing`, `kai:review`, `kai:blocked` in your repo.
+4. Optional, for Telegram: create `~/.config/kai-harness/env`:
+   ```
+   TELEGRAM_BOT_TOKEN=123456:abcdef
+   TELEGRAM_CHAT_ID=987654321
+   ```
+5. Label an issue `kai:ready` and run one pass:
+   ```zsh
+   zsh -lc 'python3 supervisor.py --project projects/my-app.project.json --once'
+   ```
+
+When a single pass behaves, run it continuously as a launchd service: see `launchd/README.md` and `./kaictl start`. The planner has its own service and control script (`./argoctl`) and is off by default; card creation stays a human decision until you turn it on.
+
+## Configuration
+
+| Key | What it does |
+|-----|--------------|
+| `repo_dir`, `github_repo` | Where the code lives locally and on GitHub |
+| `prod_branch`, `merge_target` | Kai merges into `merge_target` only, never `prod_branch` |
+| `gate_cmd` | The command that must pass before anything merges |
+| `one_way_door_globs`, `one_way_door_keywords` | Paths and added-code keywords that force escalation |
+| `conventions_path` | Your repo's engineering rules, passed to every agent |
+| `max_fix_attempts` | How many times Dae may retry after review feedback |
+| `planning_sources`, `current_milestone`, `planner_target_ready` | Planner input and how many ready cards to keep queued |
+| `project_board` | Optional: keeps a GitHub Projects status column in sync |
 
 ## Layout
 
 ```
-supervisor.py                     the loop (spawn Dae, gate, spawn Tech-Lead, merge)
-lib.py                            the toolbox: gh/git/gate/telegram/claude wrappers
-agents/dae.md                     builder prompt (Daedalus)
-agents/tech-lead.md               reviewer prompt (independent, adversarial)
-kai.project.example.json          the project descriptor schema
-launchd/com.kai.supervisor.plist  launchd service template
-state/                            runtime state (git-ignored): ledger, offsets, logs
-tests/test_lib.py                 unit tests for the pure functions
+supervisor.py        the loop: branch, build, gate, review, merge or escalate
+planner.py           Argo: stocks the board from a PRD (never merges)
+lib.py               gh / git / gate / Telegram / claude wrappers
+agents/              the prompts for Dae, Tech-Lead and Argo
+kaictl, argoctl      start / stop / status / logs for the two services
+launchd/             service templates and install notes
+tests/               unit tests for the pure functions
 ```
+
+Run the tests with `python3 -m unittest discover -s tests`.
+
+## Status
+
+Built and run against a real Next.js product repo. It is a working harness, not a packaged product: expect to read the code and adapt the prompts and config to your repo.
+
+## License
+
+MIT. See `LICENSE`.

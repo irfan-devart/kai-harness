@@ -10,9 +10,9 @@ Argo NEVER writes code and NEVER merges. It only creates cards and escalates pla
 separate loop from the build supervisor (supervisor.py): Argo feeds the board, Kai drains it.
 
 Run:
-    zsh -lc 'python3 planner.py --project projects/supercoach.project.json --once'
-    zsh -lc 'python3 planner.py --project projects/supercoach.project.json --once --dry-run'
-    zsh -lc 'python3 planner.py --project projects/supercoach.project.json'   # continuous
+    zsh -lc 'python3 planner.py --project projects/my-app.project.json --once'
+    zsh -lc 'python3 planner.py --project projects/my-app.project.json --once --dry-run'
+    zsh -lc 'python3 planner.py --project projects/my-app.project.json'   # continuous
 """
 
 from __future__ import annotations
