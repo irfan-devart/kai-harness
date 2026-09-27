@@ -75,6 +75,30 @@ OWD_PROJECT = {
 }
 
 
+class TestRuleFiles(unittest.TestCase):
+    """A change that edits the rules it is reviewed against must never self-merge."""
+
+    P = dict(PROJECT, conventions_path="docs/CONVENTIONS.md")
+
+    def test_root_claude_md_is_held(self):
+        self.assertEqual(lib.one_way_door(["CLAUDE.md"], "", self.P), "rules:**/CLAUDE.md")
+
+    def test_nested_agents_md_is_held(self):
+        self.assertEqual(lib.one_way_door(["apps/web/AGENTS.md"], "", self.P), "rules:**/AGENTS.md")
+
+    def test_claude_dir_is_held(self):
+        self.assertEqual(lib.one_way_door([".claude/settings.json"], "", self.P), "rules:.claude/**")
+
+    def test_conventions_path_is_held(self):
+        self.assertEqual(lib.one_way_door(["docs/CONVENTIONS.md"], "", self.P), "rules:docs/CONVENTIONS.md")
+
+    def test_ordinary_docs_are_not_held(self):
+        self.assertIsNone(lib.one_way_door(["docs/README.md", "src/app.ts"], "+ok\n", self.P))
+
+    def test_no_conventions_path_still_guards_fixed_set(self):
+        self.assertEqual(lib.one_way_door(["CLAUDE.md"], "", PROJECT), "rules:**/CLAUDE.md")
+
+
 class TestOneWayDoorCommentAware(unittest.TestCase):
     def test_keyword_only_in_line_comment_returns_none(self):
         # (a) The only "firebase-admin" sits in a // comment — the exact false positive

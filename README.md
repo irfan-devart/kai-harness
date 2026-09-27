@@ -64,6 +64,7 @@ These are enforced in code, not left to the prompts:
 - **The reviewer did not write the code.** Separate process, separate prompt, told to find the reason not to ship.
 - **Kai never trusts a self-report.** The gate result that counts is the one Kai ran.
 - **One-way doors are caught twice.** Kai scans changed paths against your globs and scans only the *added* code for risky keywords, ignoring comments. The reviewer flags them independently. Either one is enough to hold the change. Auth, migrations, payments, secrets, deletions and deploy config are the defaults.
+- **A change can't rewrite the rules it's judged by.** The reviewer gets your conventions file, `CLAUDE.md` and `AGENTS.md` as they stand on the staging branch, not the copies in the branch under review. Any change that edits those files, `.claude/` or the Kai project file is held for a human.
 - **Prod is never a merge target.** Kai merges into a staging branch like `dev` and refuses to start if staging and prod are the same branch. Promotion to prod is always yours.
 - **Failure means stop, not retry.** An unreadable review is not an approval. A failed merge (conflict, branch protection) is not retried blindly. One bad card never takes down the loop.
 - **Every stop leaves a note.** Each blocked or held card gets a comment saying exactly why, and every outcome goes to `state/ledger.jsonl`.

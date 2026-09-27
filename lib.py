@@ -593,6 +593,37 @@ def _added_code_from_diff(diff_text):
     return "\n".join(out)
 
 
+# Files that set the rules the agents work and review under. A change to any of them could
+# weaken its own review, so it always goes to a human, whatever the project globs say.
+RULE_FILE_GLOBS = ["**/CLAUDE.md", "**/AGENTS.md", ".claude/**", "**/kai.project.json"]
+
+
+def rule_file_globs(project):
+    """Return the rule-file globs for ``project``: the fixed set plus its conventions file."""
+    globs = list(RULE_FILE_GLOBS)
+    conventions = project.get("conventions_path")
+    if conventions:
+        globs.append(str(conventions).replace("\\", "/").lstrip("/"))
+    return globs
+
+
+def read_at_ref(repo_dir, ref, paths):
+    """Read ``paths`` from a git ref (e.g. ``origin/dev``), not the working tree.
+
+    Returns ``[(path, text), ...]`` for the files that exist at that ref; missing files are
+    skipped. Used so the reviewer always judges against the integration branch's rules, never
+    a copy the change under review may have edited.
+    """
+    found = []
+    for rel in paths:
+        if not rel:
+            continue
+        rc, out, _err = run(["git", "-C", repo_dir, "show", "%s:%s" % (ref, rel)])
+        if rc == 0:
+            found.append((rel, out))
+    return found
+
+
 def one_way_door(changed_files, diff_text, project):
     """Return the SPECIFIC trigger string if the change touches a one-way door, else None.
 
@@ -611,6 +642,14 @@ def one_way_door(changed_files, diff_text, project):
     """
     globs = project.get("one_way_door_globs", []) or []
     keywords = project.get("one_way_door_keywords", []) or []
+
+    # Rule files first: a change that edits the rules it is reviewed against never self-merges.
+    rule_globs = rule_file_globs(project)
+    for raw_path in (changed_files or []):
+        norm = str(raw_path).replace("\\", "/")
+        for pattern in rule_globs:
+            if _glob_match(norm, pattern):
+                return "rules:%s" % pattern
 
     for raw_path in (changed_files or []):
         norm = str(raw_path).replace("\\", "/")
