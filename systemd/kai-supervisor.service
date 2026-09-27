@@ -1,0 +1,15 @@
+# Kai supervisor as a systemd user service (Linux).
+# Install: cp systemd/kai-supervisor.service ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now kai-supervisor
+# Edit the path and project file below to match your setup.
+[Unit]
+Description=Kai supervisor (builds kai:ready cards)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/zsh -lc 'cd %h/kai-harness && exec python3 supervisor.py --project projects/my-app.project.json --poll-interval 300'
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

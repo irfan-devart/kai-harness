@@ -100,8 +100,9 @@ On GitHub: cards moving across your Projects board, PRs with the card linked, an
 
 ## Requirements
 
-- macOS for the included service templates (launchd). The Python itself is portable.
+- macOS or Linux. Service templates are included for both (launchd and systemd).
 - Python 3, standard library only. No packages to install.
+- `zsh` (default on macOS; on Linux, `sudo apt install zsh` or equivalent). Kai runs the gate and the agents through a zsh login shell so they see the same PATH you do.
 - `git`, the GitHub CLI `gh` (authenticated) and the `claude` CLI on your login PATH.
 - A repo with a gate command (for example `pnpm check` or `make test`) and a staging branch.
 - Optional: a Telegram bot for notifications, and a GitHub Projects board for status sync.
@@ -110,7 +111,7 @@ On GitHub: cards moving across your Projects board, PRs with the card linked, an
 
 1. Clone this repo, for example to `~/kai-harness`.
 2. Copy `kai.project.example.json` to `projects/my-app.project.json` and fill it in. Files in `projects/` are git-ignored.
-3. Create the labels `kai:ready`, `kai:doing`, `kai:review` and `kai:blocked` in your repo.
+3. Set up GitHub: the labels, and optionally the Projects board (see [Setting up GitHub](#setting-up-github) below).
 4. Optional, for Telegram, create `~/.config/kai-harness/env`:
    ```
    TELEGRAM_BOT_TOKEN=123456:abcdef
@@ -120,8 +121,92 @@ On GitHub: cards moving across your Projects board, PRs with the card linked, an
    ```zsh
    zsh -lc 'python3 supervisor.py --project projects/my-app.project.json --once'
    ```
-6. When a single pass behaves, run it as a service with `./kaictl start` (see `launchd/README.md`). It restarts itself if it crashes.
-7. To let Argo plan, point `planning_sources` at your PRD, try `python3 planner.py --project projects/my-app.project.json --once --dry-run`, then `./argoctl start` when you are happy. The planner is off by default: card creation stays a human decision until you turn it on.
+6. When a single pass behaves, run it as a service. It restarts itself if it crashes.
+   - **macOS:** `./kaictl start` (see `launchd/README.md`).
+   - **Linux:** copy `systemd/kai-supervisor.service` to `~/.config/systemd/user/`, edit the path, then `systemctl --user enable --now kai-supervisor`. To keep it running when you log out, run `loginctl enable-linger $USER` once.
+7. To let Argo plan, point `planning_sources` at your PRD, try `python3 planner.py --project projects/my-app.project.json --once --dry-run`, then start it as a service when you are happy (`./argoctl start` on macOS, `systemd/kai-planner.service` on Linux). The planner is off by default: card creation stays a human decision until you turn it on.
+
+## Setting up GitHub
+
+### 1. Labels (required)
+
+Labels are how Kai tracks each card. Create them once per repo:
+
+```bash
+R=your-org/my-app
+gh label create kai:ready   -R $R --color 0E8A16 --description "Ready for Kai to build"
+gh label create kai:doing   -R $R --color 1D76DB --description "Kai is building"
+gh label create kai:review  -R $R --color FBCA04 --description "PR open, in review"
+gh label create kai:blocked -R $R --color D93F0B --description "Stopped, needs a human (reason in comments)"
+```
+
+You only ever apply `kai:ready`, by hand or through Argo. Kai moves the card through the rest:
+
+```
+kai:ready ──> kai:doing ──> kai:review ──> closed (merged to dev)
+                  │              │
+                  └──────────────┴──────> kai:blocked (reason posted on the card)
+```
+
+To send a blocked card round again, fix the card (or the code), remove `kai:blocked` and add `kai:ready`.
+
+### 2. A card Kai can build
+
+A card is an ordinary GitHub issue. Small and specific wins: one card should be one branch, one PR, about an hour of work. Argo writes cards in this shape, and hand-written ones should follow it:
+
+> **Title:** Add weekly summary email
+>
+> Users who opted in to summaries get a Monday email with last week's activity, so they come back without us sending generic newsletters.
+>
+> **Acceptance criteria:**
+> - A `sendWeeklySummary(userId)` job builds the email from the last 7 days of activity
+> - Users with `summaryOptIn = false` are skipped
+> - The email uses the existing `BaseEmail` template
+> - Unit tests cover opted-in, opted-out and no-activity users
+>
+> **Scope:** ~4 files. Cite: `CONVENTIONS.md` (email templates), `docs/prd.md` section 3.2.
+> **Halt-and-ask if:** it needs a new email provider or a new secret.
+
+The acceptance criteria matter most: the builder builds to them and the reviewer checks against them. If you cannot write them, the card is too big; split it.
+
+### 3. Projects board (optional)
+
+If you use a GitHub Projects board, Kai moves each card's Status as it works. Without it, everything still works through labels.
+
+**What the board should look like:** a Board view grouped by the built-in **Status** field, with at least these four options (the default board template has three; add **In Review**):
+
+| Status column | Who puts the card there |
+|---|---|
+| Todo | You or Argo (with the `kai:ready` label) |
+| In Progress | Kai, when Dae starts building |
+| In Review | Kai, when the PR is open and under review |
+| Done | Kai, after merging |
+
+Blocked cards stay where they stopped and carry the `kai:blocked` label, so filter or group by label to see them.
+
+**Setup:**
+
+1. In the project's **Workflows**, turn on **Auto-add to project** for your repo (for example with filter `is:issue`), so new cards land on the board. Kai only moves cards that are already on it.
+2. Give `gh` access to projects: `gh auth refresh -s project`.
+3. Look up the IDs Kai needs:
+   ```bash
+   gh project list --owner your-org                                    # the project number
+   gh project view 1 --owner your-org --format json --jq .id           # project_id (PVT_...)
+   gh project field-list 1 --owner your-org --format json \
+     --jq '.fields[] | select(.name=="Status") | {id, options}'        # status_field_id and option ids
+   ```
+4. Put them in the `project_board` block of your project file:
+   ```json
+   "project_board": {
+     "owner": "your-org",
+     "project_number": 1,
+     "project_id": "PVT_kwDO...",
+     "status_field_id": "PVTSSF_lADO...",
+     "status_options": { "in_progress": "47fc9ee4", "in_review": "df73e18b", "done": "98236657" }
+   }
+   ```
+
+Board sync is best-effort by design: if the board is misconfigured, Kai logs it and carries on building. A cosmetic failure never blocks a merge.
 
 ## Configuration
 
@@ -144,8 +229,9 @@ supervisor.py        Kai: branch, build, gate, review, merge or hold
 planner.py           Argo: stocks the board from your PRD (never writes code, never merges)
 lib.py               gh, git, gate, Telegram and claude wrappers, one-way-door detection
 agents/              the Markdown prompts for Dae, Tech-Lead and Argo
-kaictl, argoctl      start, stop, status and logs for the two services
-launchd/             service templates and install notes
+kaictl, argoctl      start, stop, status and logs for the two services (macOS)
+launchd/             macOS service templates and install notes
+systemd/             Linux service templates
 tests/               unit tests for the decision logic
 ```
 
@@ -153,7 +239,7 @@ Run the tests with `python3 -m unittest discover -s tests`.
 
 ## Status
 
-Built and run against a real Next.js product repo, planning from its PRD and merging to its staging branch. It is a working harness, not a packaged product: expect to read the code and adapt the prompts, rules and config to your repo. Inbound Telegram messages are logged but not yet acted on; approving escalations from your phone is the next increment.
+Built and run against a real Next.js product repo on macOS, planning from its PRD and merging to its staging branch. On Linux the supervisor loop is verified; the full build path uses the same code but has had less mileage there. It is a working harness, not a packaged product: expect to read the code and adapt the prompts, rules and config to your repo. Inbound Telegram messages are logged but not yet acted on; approving escalations from your phone is the next increment.
 
 ## Adopting this on your team
 
